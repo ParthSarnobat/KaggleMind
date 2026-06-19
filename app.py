@@ -1,0 +1,232 @@
+import streamlit as st
+import os
+import json
+from utils.scraper import kaggle_summary
+from agents.researcher import DeepResearchAgent
+from agents.strategist import StrategyAgent 
+from agents.debugger import DebuggerAgent
+
+st.set_page_config(page_title="KaggleMind", layout="wide")
+
+if not os.path.exists("storage"):
+    os.makedirs("storage")
+
+#STATE & SIDEBAR ARCHITECTURE
+past_comps = os.listdir("storage")
+comp_mapping = {}    
+slug_to_name = {}    
+
+for slug in past_comps:
+    meta_path = f"storage/{slug}/metadata.json"
+    clean_name = slug.replace("-", " ").title()
+    
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta_data = json.load(f)
+                clean_name = meta_data.get("title", clean_name)
+        except Exception:
+            pass
+            
+    comp_mapping[clean_name] = slug
+    slug_to_name[slug] = clean_name
+
+sidebar_options = ["➕ New Competition"] + list(comp_mapping.keys())
+
+if "active_slug" not in st.session_state:
+    st.session_state.active_slug = "New Competition"
+
+if st.session_state.active_slug == "New Competition":
+    start_index = 0
+else:
+    current_display_name = slug_to_name.get(st.session_state.active_slug, "➕ New Competition")
+    try:
+        start_index = sidebar_options.index(current_display_name)
+    except ValueError:
+        start_index = 0
+
+chosen_display = st.sidebar.radio("Your Research Chats", sidebar_options, index=start_index)
+st.session_state.active_slug = comp_mapping.get(chosen_display, "New Competition")
+
+
+# 2. MAIN WORKSPACE UI
+st.title("KaggleMind: Deep Research Agent")
+st.divider()
+
+if st.session_state.active_slug == "New Competition":
+    url = st.text_input("Paste Kaggle Competition URL:", placeholder="https://www.kaggle.com/competitions/...")
+    
+    if st.button("Start Research", type="primary") and url:
+        with st.spinner("🕵️ Agent 1: Scouring forums and metadata..."):
+            try:
+                scraped_data = kaggle_summary(url)
+                comp_slug = scraped_data['slug']
+                
+                researcher = DeepResearchAgent()
+                dossier = researcher.generate_dossier(comp_slug, scraped_data['markdown'])
+                
+                path = f"storage/{comp_slug}"
+                if not os.path.exists(path):
+                    os.makedirs(path)
+                    
+                with open(f"{path}/dossier.md", "w", encoding="utf-8") as f:
+                    f.write(dossier)
+                
+                nice_title = comp_slug.replace("-", " ").title()
+                with open(f"{path}/metadata.json", "w", encoding="utf-8") as f:
+                    json.dump({"title": nice_title, "slug": comp_slug}, f)
+                
+                st.session_state.active_slug = comp_slug
+                st.rerun()
+                
+            except Exception as e:
+                st.error(f"An error occurred during research: {str(e)}")
+
+else:
+    active_slug = st.session_state.active_slug
+    dossier_path = f"storage/{active_slug}/dossier.md"
+    strat_hist_path = f"storage/{active_slug}/chat_hist.json"
+    code_hist_path = f"storage/{active_slug}/code_chat_hist.json"
+    
+    st.header(f"📋 {chosen_display}")
+    
+    tab1, tab2, tab3 = st.tabs(["📑 Research Dossier", "⚔️ Strategy War Room", "💻 Code Co-Pilot"])
+    
+    with tab1:
+        if os.path.exists(dossier_path):
+            with open(dossier_path, "r", encoding="utf-8") as f:
+                dossier_content = f.read()
+            st.markdown(dossier_content)
+        else:
+            st.error("Dossier data file not found.")
+            dossier_content = ""
+
+    with tab2:
+        if os.path.exists(strat_hist_path):
+            with open(strat_hist_path, "r", encoding="utf-8") as f:
+                strat_history = json.load(f)
+        else:
+            strat_history = []
+
+        col2_a, col2_b = st.columns([5, 1])
+        with col2_a:
+            st.caption("Brainstorm and refine your high-level training and cross-validation strategies here.")
+        with col2_b:
+            if strat_history and st.button("🧹 Clear", key="clear_strat", type="secondary"):
+                os.remove(strat_hist_path)
+                st.rerun()
+
+        st.divider()
+
+        for msg in strat_history:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+                
+        strat_proposal = st.chat_input("Discuss your strategy parameters...", key="strat_chat_input")
+        
+        if strat_proposal:
+            strat_history.append({"role": "user", "content": strat_proposal})
+            
+            with st.spinner("🤖 Grandmaster Strategist is analyzing..."):
+                strategist = StrategyAgent()
+                agent_critique = strategist.review_proposal(dossier_content, strat_history[:-1], strat_proposal)
+                
+            strat_history.append({"role": "assistant", "content": agent_critique})
+            
+            with open(strat_hist_path, "w", encoding="utf-8") as f:
+                json.dump(strat_history, f, indent=4)
+            st.rerun()
+
+        if os.path.exists(code_hist_path):
+            with open(code_hist_path, "r", encoding="utf-8") as f:
+                code_history = json.load(f)
+        else:
+            code_history = []
+            
+        if "active_code" not in st.session_state:
+            st.session_state.active_code = ""
+        if "active_file_name" not in st.session_state:
+            st.session_state.active_file_name = ""
+            
+        def extract_code_from_ipynb(file_bytes):
+            try:
+                notebook = json.loads(file_bytes.decode('utf-8'))
+                code_cells = []
+                for cell in notebook.get('cells', []):
+                    if cell.get('cell_type') == 'code':
+                        cell_content = "".join(cell.get('source', []))
+                        if cell_content.strip():
+                            code_cells.append(cell_content)
+                return "\n\n# --- NEXT CELL ---\n\n".join(code_cells)
+            except Exception as e:
+                return f"# Error parsing notebook: {str(e)}"
+
+        col3_a, col3_b = st.columns([5, 1])
+        with col3_a:
+            if st.session_state.active_code:
+                with st.expander(f"👀 Active File Context: {st.session_state.active_file_name}"):
+                    st.code(st.session_state.active_code, language="python")
+            else:
+                st.info("No active file. Use the paperclip icon in the chat box below to upload a script!")
+        with col3_b:
+            if code_history or st.session_state.active_code:
+                if st.button("🧹 Clear Chat", key="clear_code", type="secondary"):
+                    if os.path.exists(code_hist_path):
+                        os.remove(code_hist_path)
+                    st.session_state.active_code = ""
+                    st.session_state.active_file_name = ""
+                    st.rerun()
+
+        st.divider()
+
+        chat_container = st.container(height=500)
+        with chat_container:
+            if not code_history:
+                st.caption("👋 Welcome to the Code Studio! Upload a .py or .ipynb file via the chat bar, or paste a terminal error to get started.")
+            for msg in code_history:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
+
+        prompt = st.chat_input(
+            "Ask a question, paste an error, or upload a script...", 
+            key="code_chat_input", 
+            accept_file=True, 
+            file_type=["py", "ipynb"]
+        )
+        
+        if prompt:
+            if isinstance(prompt, str):
+                user_text = prompt
+                uploaded_files = []
+            else:
+                user_text = getattr(prompt, "text", "")
+                uploaded_files = getattr(prompt, "files", [])
+            
+            if uploaded_files:
+                file = uploaded_files[0]
+                st.session_state.active_file_name = file.name
+                if file.name.endswith('.ipynb'):
+                    st.session_state.active_code = extract_code_from_ipynb(file.getvalue())
+                else:
+                    st.session_state.active_code = file.getvalue().decode("utf-8")
+                
+                if not user_text.strip():
+                    user_text = f"I have uploaded my script `{file.name}`. Could you review it against our strategy?"
+            
+            if user_text.strip():
+                code_history.append({"role": "user", "content": user_text})
+                
+                with st.spinner("🤖 Co-pilot is evaluating..."):
+                    copilot = DebuggerAgent()
+                    copilot_response = copilot.chat_with_copilot(
+                        dossier_content, 
+                        st.session_state.active_code, 
+                        code_history[:-1], 
+                        user_text
+                    )
+                
+                code_history.append({"role": "assistant", "content": copilot_response})
+                
+                with open(code_hist_path, "w", encoding="utf-8") as f:
+                    json.dump(code_history, f, indent=4)
+                st.rerun()

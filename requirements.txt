@@ -1,0 +1,6 @@
+streamlit
+langgraph
+langchain-google-genai
+firecrawl-py
+kagglehub
+python-dotenv

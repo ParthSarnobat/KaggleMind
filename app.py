@@ -136,7 +136,8 @@ else:
             with open(strat_hist_path, "w", encoding="utf-8") as f:
                 json.dump(strat_history, f, indent=4)
             st.rerun()
-
+            
+    with tab3:
         if os.path.exists(code_hist_path):
             with open(code_hist_path, "r", encoding="utf-8") as f:
                 code_history = json.load(f)

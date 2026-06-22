@@ -150,7 +150,7 @@ else:
                     
                     if mermaid_match:
                         # Strip the raw code block out of the text so it doesn't double-print
-                        display_text = re.sub(r'```mermaid\n.*?\n```', '\n\n*(Architecture Flowchart Generated)*\n', display_text, flags=re.DOTALL)
+                        display_text = re.sub(r'```mermaid\n.*?\n```', '\n\n*( Architecture Flowchart Generated)*\n', display_text, flags=re.DOTALL)
                         st.markdown(display_text)
                         
                         # Render the actual visual graph

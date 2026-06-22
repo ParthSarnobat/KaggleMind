@@ -31,7 +31,18 @@ class StrategyAgent:
             - Potential Data Leakage risks.
             - Advanced feature engineering ideas matching the domain.
             
-            Engage in a collaborative, peer-to-peer technical discussion. Keep your responses structured but conversational."""),
+            Engage in a collaborative, peer-to-peer technical discussion. Keep your responses structured but conversational.
+             
+            Whenever you propose a machine learning pipeline, cross-validation strategy, or feature engineering architecture, you MUST include a flowchart visualizing the data flow. 
+            Always output the flowchart using valid Mermaid.js syntax. 
+
+            CRITICAL MERMAID SYNTAX RULES:
+            1. Use 'graph TD' for the layout.
+            2. You MUST wrap all node text in double quotes to prevent parsing errors. Example: A["Raw Data"] --> B["Data Processing (EDA)"]
+            3. Never use custom styles, colors, or classes.
+            4. For connection text, use the exact pipe syntax. Example: C["Node 1"] -->|"Validation Split"| D["Node 2"]
+            5. Wrap the entire graph strictly inside ```mermaid code blocks.
+            """),
             MessagesPlaceholder(variable_name="history"),
             ("human", "{proposal}")
         ])

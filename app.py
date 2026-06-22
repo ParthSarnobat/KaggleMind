@@ -1,10 +1,32 @@
 import streamlit as st
 import os
 import json
+import re                                          
+import streamlit.components.v1 as components
 from utils.scraper import kaggle_summary
 from agents.researcher import DeepResearchAgent
 from agents.strategist import StrategyAgent 
 from agents.debugger import DebuggerAgent
+
+def render_mermaid(mermaid_code):
+    """Injects Mermaid.js into Streamlit to render flowcharts in dark mode."""
+    # Clean up any weird invisible whitespace the AI generated
+    clean_code = mermaid_code.strip()
+    
+    # We use await mermaid.run() to force execution, bypassing iframe loading quirks!
+    html_code = f"""
+<body style="background-color: transparent; margin: 0; padding: 0; display: flex; justify-content: center;">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({{ theme: 'dark' }});
+        await mermaid.run({{ querySelector: '.mermaid' }});
+    </script>
+    <pre class="mermaid">
+{clean_code}
+    </pre>
+</body>
+"""
+    components.html(html_code, height=650, scrolling=True)
 
 st.set_page_config(page_title="KaggleMind", layout="wide")
 
@@ -120,14 +142,31 @@ else:
 
         for msg in strat_history:
             with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+                display_text = msg["content"]
+                
+                # Check if it's the AI and if it contains a mermaid block
+                if msg["role"] == "assistant":
+                    mermaid_match = re.search(r'```mermaid\n(.*?)\n```', display_text, re.DOTALL)
+                    
+                    if mermaid_match:
+                        # Strip the raw code block out of the text so it doesn't double-print
+                        display_text = re.sub(r'```mermaid\n.*?\n```', '\n\n*(Architecture Flowchart Generated)*\n', display_text, flags=re.DOTALL)
+                        st.markdown(display_text)
+                        
+                        # Render the actual visual graph
+                        render_mermaid(mermaid_match.group(1))
+                    else:
+                        st.markdown(display_text)
+                else:
+                    st.markdown(display_text)
                 
         strat_proposal = st.chat_input("Discuss your strategy parameters...", key="strat_chat_input")
         
+        # 2. Render new messages live
         if strat_proposal:
             strat_history.append({"role": "user", "content": strat_proposal})
             
-            with st.spinner("🤖 Grandmaster Strategist is analyzing..."):
+            with st.spinner("🤖 Grandmaster Strategist is mapping the architecture..."):
                 strategist = StrategyAgent()
                 agent_critique = strategist.review_proposal(dossier_content, strat_history[:-1], strat_proposal)
                 

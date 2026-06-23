@@ -1,7 +1,8 @@
 import streamlit as st
 import os
 import json
-import re                                          
+import re                 
+import shutil                         
 import streamlit.components.v1 as components
 from utils.scraper import kaggle_summary
 from agents.researcher import DeepResearchAgent
@@ -29,15 +30,78 @@ def render_mermaid(mermaid_code):
     components.html(html_code, height=650, scrolling=True)
 
 st.set_page_config(page_title="KaggleMind", layout="wide")
+# --- INJECT CUSTOM CSS FOR SEAMLESS SIDEBAR NAVIGATION ---
+# --- INJECT CUSTOM CSS FOR SEAMLESS SIDEBAR NAVIGATION ---
+st.markdown("""
+    <style>
+    /* 1. Strip borders and backgrounds from ALL buttons in the history rows */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] button {
+        border: none !important;
+        box-shadow: none !important;
+        background-color: transparent !important;
+    }
+
+    /* 2. Style the Active Chat (Primary Button) so it looks like a highlighted pill */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] button[kind="primary"] {
+        background-color: rgba(255, 255, 255, 0.1) !important; 
+        font-weight: bold !important;
+        border-radius: 0.4rem !important;
+    }
+
+    /* 3. Add a soft hover effect for inactive chats */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] button[kind="secondary"]:hover {
+        background-color: rgba(255, 255, 255, 0.05) !important;
+        border-radius: 0.4rem !important;
+    }
+
+    /* 4. Completely eliminate the column gap to merge them */
+    [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] {
+        gap: 0 !important;
+        align-items: center !important;
+        margin-bottom: 0.2rem !important; 
+    }
+
+    /* 5. Make the 3-dots subtle and centered */
+    [data-testid="stSidebar"] [data-testid="stPopover"] > button {
+        color: #888 !important; 
+        padding: 0 !important;
+    }
+    
+    [data-testid="stSidebar"] [data-testid="stPopover"] > button:hover {
+        color: #fff !important; 
+    }
+
+    /* 6. HIDE THE DROPDOWN CHEVRON ARROW */
+    [data-testid="stSidebar"] [data-testid="stPopover"] button svg,
+    [data-testid="stSidebar"] [data-testid="stPopover"] button div:nth-of-type(2),
+    [data-testid="stSidebar"] [data-testid="stPopover"] button::after,
+    [data-testid="stSidebar"] [data-testid="stPopover"] button::before {
+        display: none !important;
+        opacity: 0 !important;
+        width: 0px !important;
+        height: 0px !important;
+        margin: 0px !important;
+        padding: 0px !important;
+        visibility: hidden !important;
+    } 
+    </style>
+""", unsafe_allow_html=True)
 
 if not os.path.exists("storage"):
     os.makedirs("storage")
 
 #STATE & SIDEBAR ARCHITECTURE
-past_comps = os.listdir("storage")
+all_folders = [f for f in os.listdir("storage") if os.path.isdir(os.path.join("storage", f))]
+
+past_comps = sorted(
+    all_folders, 
+    key=lambda x: os.path.getctime(os.path.join("storage", x)), 
+    reverse=True
+)
+
 comp_mapping = {}    
 slug_to_name = {}    
-
+  
 for slug in past_comps:
     meta_path = f"storage/{slug}/metadata.json"
     clean_name = slug.replace("-", " ").title()
@@ -53,22 +117,39 @@ for slug in past_comps:
     comp_mapping[clean_name] = slug
     slug_to_name[slug] = clean_name
 
-sidebar_options = ["➕ New Competition"] + list(comp_mapping.keys())
-
 if "active_slug" not in st.session_state:
     st.session_state.active_slug = "New Competition"
 
-if st.session_state.active_slug == "New Competition":
-    start_index = 0
-else:
-    current_display_name = slug_to_name.get(st.session_state.active_slug, "➕ New Competition")
-    try:
-        start_index = sidebar_options.index(current_display_name)
-    except ValueError:
-        start_index = 0
+st.sidebar.markdown("### Your Research Chats")
 
-chosen_display = st.sidebar.radio("Your Research Chats", sidebar_options, index=start_index)
-st.session_state.active_slug = comp_mapping.get(chosen_display, "New Competition")
+is_new_active = (st.session_state.active_slug == "New Competition")
+if st.sidebar.button("➕ New Competition", use_container_width=True, type="primary" if is_new_active else "secondary"):
+    st.session_state.active_slug = "New Competition"
+    st.rerun()
+
+st.sidebar.divider()
+
+for display_name, slug in comp_mapping.items():
+    nav_col, dot_col = st.sidebar.columns([8.5, 1.5])
+    
+    with nav_col:
+        is_active = (st.session_state.active_slug == slug)
+        btn_type = "primary" if is_active else "secondary"
+        
+        if st.button(f"{display_name}", key=f"nav_{slug}", use_container_width=True, type=btn_type):
+            st.session_state.active_slug = slug
+            st.rerun()
+            
+    with dot_col:
+        with st.popover("⋮", use_container_width=True):
+            st.markdown(f"Delete **{display_name}**?")
+            if st.button("Confirm", key=f"del_{slug}", type="primary", use_container_width=True):
+                shutil.rmtree(f"storage/{slug}", ignore_errors=True)
+                if st.session_state.active_slug == slug:
+                    st.session_state.active_slug = "New Competition"
+                st.rerun()
+
+chosen_display = slug_to_name.get(st.session_state.active_slug, "➕ New Competition")
 
 
 # 2. MAIN WORKSPACE UI
@@ -110,13 +191,13 @@ else:
     strat_hist_path = f"storage/{active_slug}/chat_hist.json"
     code_hist_path = f"storage/{active_slug}/code_chat_hist.json"
     
-    st.header(f"📋 {chosen_display}")
+    st.header(f" {chosen_display}")
     
     tab1, tab2, tab3 = st.tabs(["📑 Research Dossier", "⚔️ Strategy War Room", "💻 Code Co-Pilot"])
     
     with tab1:
         if os.path.exists(dossier_path):
-            with open(dossier_path, "r", encoding="utf-8") as f:
+            with open(dossier_path, "r", encoding="utf-8") as f:        
                 dossier_content = f.read()
             st.markdown(dossier_content)
         else:
@@ -134,7 +215,7 @@ else:
         with col2_a:
             st.caption("Brainstorm and refine your high-level training and cross-validation strategies here.")
         with col2_b:
-            if strat_history and st.button("🧹 Clear", key="clear_strat", type="secondary"):
+            if strat_history and st.button("Clear", key="clear_strat", type="secondary"):
                 os.remove(strat_hist_path)
                 st.rerun()
 

@@ -10,79 +10,27 @@ from agents.strategist import StrategyAgent
 from agents.debugger import DebuggerAgent
 
 def render_mermaid(mermaid_code):
-    """An auto-healing renderer that cleans LLM hallucinations safely."""
-    import json
-    import re
-    import streamlit.components.v1 as components
+    clean_code = mermaid_code.strip()
+    clean_code = clean_code.replace('\r\n', '\n').replace('\r', '\n')
     
-    # ==========================================
-    # THE SAFE AUTO-HEALER
-    # ==========================================
-    lines = mermaid_code.split('\n')
-    fixed_lines = []
+    # Remove duplicate lines (catches duplicate node→node arrows)
+    seen_lines = []
+    for line in clean_code.split('\n'):
+        if line not in seen_lines:
+            seen_lines.append(line)
+    clean_code = '\n'.join(seen_lines)
     
-    for line in lines:
-        # 1. Strip invisible Windows carriage returns
-        line = line.replace('\r', '')
-        
-        # 2. Fix Javascript-style comments (replace // with %%, ignore http://)
-        line = re.sub(r'(?<!:)//', '%%', line)
-        
-        # 3. Kill trailing semicolons that crash the parser
-        line = line.rstrip(' ;')
-        
-        # Note: The aggressive '&' splitter was removed here because 
-        # Rule 8 in strategist.py handles it safely!
-                
-        fixed_lines.append(line)
-        
-    clean_code = '\n'.join(fixed_lines).strip()
-    safe_js_string = json.dumps(clean_code)
-
-    # ==========================================
-    # THE FRONT-END RENDERER
-    # ==========================================
     html_code = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <style>
-            body {{ background-color: transparent; margin: 0; padding: 20px; display: flex; justify-content: center; color: white; font-family: sans-serif; }}
-            #error-box {{ display: none; color: #ff4b4b; background: rgba(255, 75, 75, 0.1); padding: 15px; border-radius: 8px; width: 100%; }}
-        </style>
-    </head>
-    <body>
-        <div id="error-box"></div>
-        <div id="graph-container"></div>
-        
-        <script type="module">
-            import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-            mermaid.initialize({{ startOnLoad: false, theme: 'dark' }});
-            
-            const code = {safe_js_string};
-            const container = document.getElementById('graph-container');
-            const errorBox = document.getElementById('error-box');
-            
-            async function draw() {{
-                try {{
-                    await mermaid.parse(code);
-                    const pre = document.createElement('pre');
-                    pre.className = 'mermaid';
-                    pre.textContent = code;
-                    container.appendChild(pre);
-                    await mermaid.run({{ querySelector: '.mermaid' }});
-                }} catch (error) {{
-                    errorBox.style.display = 'block';
-                    errorBox.innerHTML = `<strong>⚠️ Mermaid Syntax Error:</strong><br><pre style="white-space: pre-wrap;">${{error.message || error}}</pre>
-                    <hr style="border-color: #ff4b4b; opacity: 0.3;">
-                    <strong>Raw Code Attempted:</strong><br><pre>${{code}}</pre>`;
-                }}
-            }}
-            
-            draw();
-        </script>
+    <body style="background-color: transparent; margin: 0; padding: 0; display: flex; justify-content: center;">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({{ startOnLoad: false, theme: 'dark' }});
+        await mermaid.run({{ querySelector: '.mermaid' }});
+    </script>
+    <pre class="mermaid">
+{clean_code}
+    </pre>
     </body>
-    </html>
     """
     components.html(html_code, height=650, scrolling=True)
     
@@ -285,11 +233,11 @@ else:
                 # Check if it's the AI and if it contains a mermaid block
                 if msg["role"] == "assistant":
                     # FIX: Bulletproof Regex that ignores spaces and Windows line breaks
-                    mermaid_match = re.search(r'```mermaid\s*(.*?)\s*```', display_text, re.DOTALL | re.IGNORECASE)
+                    mermaid_match = re.search(r'```mermaid\s*\n(.*?)\n\s*```', display_text, re.DOTALL)
                     
                     if mermaid_match:
                         # Strip the raw code block out of the text so it doesn't double-print
-                        display_text = re.sub(r'```mermaid.*?```', '\n\n*( 🗺️ Architecture Flowchart Generated )*\n', display_text, flags=re.DOTALL | re.IGNORECASE)
+                        display_text = re.sub(r'```mermaid\s*\n.*?\n\s*```', '\n\n*(Architecture Flowchart Generated)*\n', display_text, flags=re.DOTALL)
                         st.markdown(display_text)
                         
                         # Render the actual visual graph
@@ -301,6 +249,9 @@ else:
         
         # 2. Render new messages live
         if strat_proposal:
+            with st.chat_message("user"):
+                st.markdown(strat_proposal)
+                
             strat_history.append({"role": "user", "content": strat_proposal})
             
             with st.spinner("🤖 Grandmaster Strategist is mapping the architecture..."):
@@ -391,6 +342,9 @@ else:
                     user_text = f"I have uploaded my script `{file.name}`. Could you review it against our strategy?"
             
             if user_text.strip():
+                with st.chat_message("user"):
+                    st.markdown(user_text)
+                    
                 code_history.append({"role": "user", "content": user_text})
                 
                 with st.spinner("🤖 Co-pilot is evaluating..."):

@@ -53,6 +53,15 @@ class StrategyAgent:
             C2 --> D["Predict Future Positions"]
             C3 --> D["Predict Future Positions"]
             9. NO GLOBAL LOOPS: Never create massive cycles that loop the very last node all the way back to the very first node (e.g., do not do Z --> A). If you need to represent a game loop or a "Next Turn," point the final node to a NEW end-node instead (e.g., Y --> Z["Next Turn Start"]).
+            10. NO DUPLICATE NODE DEFINITIONS: Never define the same node ID more than once 
+            with different labels. If multiple arrows point to the same destination, reuse 
+            the exact same node definition. Each node ID must appear with its label [...] 
+            only once in the entire graph.
+
+            11. NO DISCONNECTED SUBGRAPHS: Every node must be reachable from the root node. 
+            Never create a separate floating flow. If you need to show a secondary flow like 
+            a 'forget' mechanism, connect it to the main graph via a dotted arrow or add it 
+            as a branch from an existing node.
             """),
             MessagesPlaceholder(variable_name="history"),
             ("human", "{proposal}")

@@ -42,6 +42,17 @@ class StrategyAgent:
             3. Never use custom styles, colors, or classes.
             4. For connection text, use the exact pipe syntax. Example: C["Node 1"] -->|"Validation Split"| D["Node 2"]
             5. Wrap the entire graph strictly inside ```mermaid code blocks.
+            6. PREVENT LAYOUT CRASHES: NEVER create tight bidirectional loops between immediate parent/child nodes (e.g., A --> B and B --> A). If an action fails or is not taken, route the flow FORWARD to the next logical step, do not loop back to the immediate parent. Use dotted arrows (-.->) for large, architectural feedback loops (like "Next Turn").
+            7. NEVER use semicolons ; at the end of lines. NEVER use // for comments. If you must comment, use %%. Always use the pipe syntax -->|"text"| for labeled arrows.
+            8. EXPLICIT CONNECTIONS ONLY: You are strictly forbidden from grouping nodes. You must write out every single arrow connection on its own dedicated line.
+            [BAD EXAMPLE - DO NOT DO THIS]:
+            C1 & C2 & C3 --> D["Predict Future Positions"]
+
+            [GOOD EXAMPLE - YOU MUST DO THIS]:
+            C1 --> D["Predict Future Positions"]
+            C2 --> D["Predict Future Positions"]
+            C3 --> D["Predict Future Positions"]
+            9. NO GLOBAL LOOPS: Never create massive cycles that loop the very last node all the way back to the very first node (e.g., do not do Z --> A). If you need to represent a game loop or a "Next Turn," point the final node to a NEW end-node instead (e.g., Y --> Z["Next Turn Start"]).
             """),
             MessagesPlaceholder(variable_name="history"),
             ("human", "{proposal}")
